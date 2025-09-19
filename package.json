@@ -1,17 +1,23 @@
 {
   "name": "sms-at-command-system",
   "version": "1.0.0",
-  "description": "SMS AT Command System with Railway deployment",
+  "description": "Complete SMS AT Command System with rate limiting and virtual phone for development",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "NODE_ENV=development nodemon server/index.js",
-    "build": "cd admin && npm install && npm run build",
-    "postbuild": "cp -r admin/build server/public",
+    "prod": "NODE_ENV=production node server/index.js",
+    "bridge": "node bridge/index.js",
+    "bridge-dev": "NODE_ENV=development nodemon bridge/index.js",
+    "setup": "node scripts/setup.js",
     "db:migrate": "node scripts/migrate.js",
     "db:seed": "node scripts/seed.js",
-    "railway:build": "npm install && npm run build",
-    "railway:start": "npm run db:migrate && npm start"
+    "build": "npm run build:admin",
+    "build:admin": "cd admin && npm install && npm run build && cp -r build ../server/public",
+    "railway:build": "npm install && npm run build:admin",
+    "railway:start": "npm run db:migrate && npm start",
+    "install:all": "npm install && cd admin && npm install",
+    "start:all": "concurrently \"npm run dev\" \"npm run bridge-dev\""
   },
   "engines": {
     "node": "18.x"
@@ -21,6 +27,7 @@
     "cors": "^2.8.5",
     "ws": "^8.14.2",
     "pg": "^8.11.3",
+    "mysql2": "^3.6.3",
     "dotenv": "^16.3.1",
     "helmet": "^7.1.0",
     "express-rate-limit": "^7.1.5",
@@ -33,9 +40,14 @@
     "node-cron": "^3.0.2",
     "winston": "^3.11.0",
     "multer": "^1.4.5",
+    "csv-parser": "^3.0.0",
     "papaparse": "^5.4.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "eslint": "^8.53.0",
+    "concurrently": "^8.2.2"
   }
 }
