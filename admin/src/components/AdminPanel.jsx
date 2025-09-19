@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, Phone, Users, Settings, BarChart3, MessageSquare, AlertTriangle, CheckCircle, Clock, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Send, Phone, Users, Settings, BarChart3, MessageSquare, AlertTriangle, CheckCircle } from 'lucide-react';
 
 const AdminPanel = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -14,29 +14,44 @@ const AdminPanel = () => {
   const [messageInput, setMessageInput] = useState('');
   const messagesEndRef = useRef(null);
 
-  useEffect(() => {
-    fetchConfig();
-    fetchContacts();
-    connectWebSocket();
-    
-    return () => {
-      if (wsConnection) {
-        wsConnection.close();
-      }
-    };
-  }, []);
+  // NEW: keep the live socket in a ref so cleanup doesn't depend on state
+  const wsRef = useRef(null);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [virtualMessages]);
+  const handleWebSocketMessage = (data) => {
+    switch (data.type) {
+      case 'virtual_message':
+      case 'virtual_message_sent':
+        setVirtualMessages((prev) => [...prev, data.data]);
+        break;
+      case 'incoming_message':
+        // Handle real incoming messages
+        break;
+      case 'rate_limit_update':
+        setRateLimitStatus((prev) => ({ ...prev, [data.phone]: data.status }));
+        break;
+      default:
+        // eslint-disable-next-line no-console
+        console.log('Unhandled message type:', data.type);
+    }
+  };
 
-  const connectWebSocket = () => {
-    const ws = new WebSocket('ws://localhost:3001');
-    
+  // NEW: memoize to satisfy ESLint + allow safe reconnection from onclose
+  const connectWebSocket = useCallback(() => {
+    // close any existing connection before opening a new one
+    if (wsRef.current) {
+      try { wsRef.current.close(); } catch (_) {}
+    }
+
+    const url = process.env.REACT_APP_WS_URL || 'ws://localhost:3001';
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
     ws.onopen = () => {
+      // eslint-disable-next-line no-console
       console.log('WebSocket connected');
       setIsConnected(true);
       ws.send(JSON.stringify({ type: 'register_admin' }));
+      setWsConnection(ws); // keep if you still use this elsewhere
     };
 
     ws.onmessage = (event) => {
@@ -45,35 +60,34 @@ const AdminPanel = () => {
     };
 
     ws.onclose = () => {
+      // eslint-disable-next-line no-console
       console.log('WebSocket disconnected');
       setIsConnected(false);
-      // Reconnect after 3 seconds
+      // attempt reconnect
       setTimeout(() => connectWebSocket(), 3000);
     };
 
     ws.onerror = (error) => {
+      // eslint-disable-next-line no-console
       console.error('WebSocket error:', error);
     };
+  }, []);
 
-    setWsConnection(ws);
-  };
+  useEffect(() => {
+    fetchConfig();
+    fetchContacts();
+    connectWebSocket();
 
-  const handleWebSocketMessage = (data) => {
-    switch (data.type) {
-      case 'virtual_message':
-      case 'virtual_message_sent':
-        setVirtualMessages(prev => [...prev, data.data]);
-        break;
-      case 'incoming_message':
-        // Handle real incoming messages
-        break;
-      case 'rate_limit_update':
-        setRateLimitStatus(prev => ({ ...prev, [data.phone]: data.status }));
-        break;
-      default:
-        console.log('Unhandled message type:', data.type);
-    }
-  };
+    return () => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try { wsRef.current.close(); } catch (_) {}
+      }
+    };
+  }, [connectWebSocket]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [virtualMessages]);
 
   const fetchConfig = async () => {
     try {
@@ -82,6 +96,7 @@ const AdminPanel = () => {
       setConfig(data);
       setVirtualPhone(data.virtual_phone_number || '+1234567890');
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to fetch config:', error);
     }
   };
@@ -92,6 +107,7 @@ const AdminPanel = () => {
       const data = await response.json();
       setContacts(data);
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to fetch contacts:', error);
     }
   };
@@ -100,8 +116,9 @@ const AdminPanel = () => {
     try {
       const response = await fetch(`/api/rate-limit/${phone}`);
       const data = await response.json();
-      setRateLimitStatus(prev => ({ ...prev, [phone]: data }));
+      setRateLimitStatus((prev) => ({ ...prev, [phone]: data }));
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to fetch rate limit status:', error);
     }
   };
@@ -116,8 +133,8 @@ const AdminPanel = () => {
         body: JSON.stringify({
           from_phone: virtualPhone,
           to_phone: currentContact,
-          message_content: messageInput
-        })
+          message_content: messageInput,
+        }),
       });
 
       if (response.ok) {
@@ -128,6 +145,7 @@ const AdminPanel = () => {
         alert(`Failed to send message: ${error.error}`);
       }
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to send virtual message:', error);
       alert('Failed to send message');
     }
@@ -143,12 +161,13 @@ const AdminPanel = () => {
         body: JSON.stringify({
           from_phone: currentContact,
           to_phone: virtualPhone,
-          message_content: messageInput
-        })
+          message_content: messageInput,
+        }),
       });
 
       setMessageInput('');
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to simulate incoming message:', error);
     }
   };
