@@ -1,4 +1,4 @@
-// PostgreSQL adapter for Railway
+// PostgreSQL adapter for Railway deployment
 const { Pool } = require('pg');
 
 class PostgreSQLAdapter {
@@ -12,8 +12,17 @@ class PostgreSQLAdapter {
     async execute(query, params = []) {
         const client = await this.pool.connect();
         try {
-            const result = await client.query(query, params);
-            return [result.rows]; // Mimic MySQL format
+            // Convert MySQL-style ? placeholders to PostgreSQL $1, $2, etc.
+            let pgQuery = query;
+            let pgParams = params;
+            
+            if (params.length > 0) {
+                let paramIndex = 1;
+                pgQuery = query.replace(/\?/g, () => `$${paramIndex++}`);
+            }
+            
+            const result = await client.query(pgQuery, pgParams);
+            return [result.rows]; // Mimic MySQL format [rows]
         } finally {
             client.release();
         }
